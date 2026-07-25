@@ -52,6 +52,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
@@ -390,7 +391,7 @@ private fun WaveformBar(playedBars: Int, total: Int, enabled: Boolean, onSeekFra
             seed.forEachIndexed { i, h ->
                 val played = i < playedBars
                 val color = if (!enabled) c.textMuted else if (played) c.accent else c.textMuted.copy(alpha = 0.55f)
-                val barH = (2.dp + (h * 22.dp))
+                val barH: Dp = 2.dp + Dp(h * 22f)
                 Box(
                     Modifier.weight(1f).height(barH).background(color)
                 )
