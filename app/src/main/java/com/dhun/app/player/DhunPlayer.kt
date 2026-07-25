@@ -64,18 +64,17 @@ class DhunPlayer(private val app: android.app.Application) {
         startPositionTicker()
     }
 
-    fun ensureSession(service: MediaSessionService) {
-        if (mediaSession == null) {
+    fun ensureSession(service: MediaSessionService): MediaSession {
+        return mediaSession ?: run {
             val intent = app.packageManager.getLaunchIntentForPackage(app.packageName)?.let {
                 PendingIntent.getActivity(app, 0, it, PendingIntent.FLAG_IMMUTABLE)
             }
-            mediaSession = MediaSession.Builder(app, exo)
-                .setSessionActivity(intent!!)
+            MediaSession.Builder(app, exo)
+                .apply { if (intent != null) setSessionActivity(intent) }
                 .build()
+                .also { mediaSession = it }
         }
     }
-
-    val sessionToken: MediaSession.Token? get() = mediaSession?.token
 
     private fun startPositionTicker() {
         posJob?.cancel()
