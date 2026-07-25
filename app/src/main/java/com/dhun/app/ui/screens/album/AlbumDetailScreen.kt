@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.sp
 import com.dhun.app.DhunApp
 import com.dhun.app.components.HairlineDivider
 import com.dhun.app.components.SongRow
+import com.dhun.app.components.SquareArt
 import com.dhun.app.components.TIcon
 import com.dhun.app.components.TermButton
 import com.dhun.app.data.Song
@@ -75,17 +76,7 @@ fun AlbumDetailScreen(
         LazyColumn(Modifier.fillMaxSize()) {
             item {
                 Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.Top) {
-                    // square art
-                    Box(
-                        Modifier
-                            .size(130.dp)
-                            .aspectRatio(1f)
-                            .background(c.surface)
-                            .border(1.dp, c.border),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        androidx.compose.material.Text("♫", fontFamily = FontFamily.Monospace, color = c.accent, fontSize = 42.sp)
-                    }
+                    SquareArt(artUri = album.artUri, sizeDp = 130.dp, fallbackGlyph = "♫", fallbackGlyphSizeSp = 44)
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
                         androidx.compose.material.Text(

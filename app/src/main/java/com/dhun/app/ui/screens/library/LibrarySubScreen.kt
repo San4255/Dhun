@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.sp
 import com.dhun.app.DhunApp
 import com.dhun.app.components.HairlineDivider
 import com.dhun.app.components.SongRow
+import com.dhun.app.components.SquareArt
 import com.dhun.app.components.TIcon
 import com.dhun.app.components.TermButton
 import com.dhun.app.data.Album
@@ -229,18 +230,24 @@ fun AlbumTile(a: Album, onClick: () -> Unit, compact: Boolean = false) {
             interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick
         )
     ) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .aspectRatio(1f)
-                .background(c.surface)
-                .border(1.dp, c.border),
-            contentAlignment = Alignment.Center,
-        ) {
-            androidx.compose.material.Text(
-                "♫", fontFamily = FontFamily.Monospace, color = c.accent,
-                fontSize = if (compact) 20.sp else 32.sp,
+        Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            var imgFailed by remember { mutableStateOf(false) }
+            coil.compose.AsyncImage(
+                model = coil.request.ImageRequest.Builder(ctx).data(a.artUri).crossfade(false).build(),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize().border(1.dp, c.border).background(c.surface),
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                onError = { imgFailed = true },
+                onSuccess = { imgFailed = false },
             )
+            if (a.artUri == null || imgFailed) {
+                androidx.compose.material.Text(
+                    "♫", fontFamily = FontFamily.Monospace, color = c.accent,
+                    fontSize = if (compact) 20.sp else 32.sp,
+                    modifier = Modifier.align(Alignment.Center),
+                )
+            }
         }
         Spacer(Modifier.height(6.dp))
         androidx.compose.material.Text(

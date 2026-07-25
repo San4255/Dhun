@@ -69,21 +69,7 @@ fun MiniPlayer(
                     .padding(horizontal = 10.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // square art placeholder
-                Box(
-                    Modifier
-                        .size(38.dp)
-                        .background(c.surface)
-                        .border(1.dp, c.border),
-                    contentAlignment = Alignment.Center
-                ) {
-                    androidx.compose.material.Text(
-                        "♪",
-                        fontFamily = FontFamily.Monospace,
-                        color = c.accent,
-                        fontSize = 16.sp,
-                    )
-                }
+                SquareArt(artUri = song.albumArtUri, sizeDp = 40.dp, fallbackGlyph = "♪", fallbackGlyphSizeSp = 16)
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     androidx.compose.material.Text(
@@ -104,7 +90,6 @@ fun MiniPlayer(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Spacer(Modifier.height(4.dp))
-                    // progress line
                     Box(Modifier.fillMaxWidth().height(1.dp).background(c.border)) {
                         Box(Modifier.fillMaxWidth(fraction).height(1.dp).background(c.accent))
                     }
