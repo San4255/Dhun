@@ -8,12 +8,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.text.BasicTextField
@@ -261,7 +261,8 @@ fun TermTabs(
 ) {
     val c = LocalDhunColors.current
     Row(Modifier.fillMaxWidth().border(1.dp, c.border)) {
-        tabs.forEachIndexed { i, label ->
+        tabs.forEach { label ->
+            val i = tabs.indexOf(label)
             val active = i == selected
             val bg = if (active && mode == TabMode.FILLED_ACTIVE) c.surface else Color.Transparent
             val fg = if (active) c.textPrimary else c.textSecondary
@@ -292,7 +293,7 @@ fun TermTabs(
 
 // Bottom tab indicator dot square
 @Composable
-fun BottomTab(
+fun RowScope.BottomTab(
     icon: ImageVector,
     label: String,
     active: Boolean,
