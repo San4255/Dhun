@@ -1,7 +1,6 @@
 package com.dhun.app.ui
 
 import android.Manifest
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -70,13 +69,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // Media3 manages the service lifecycle itself via its MediaSessionService;
-        // starting it early helps background notifications work reliably.
-        val svcIntent = Intent(this, com.dhun.app.player.DhunPlaybackService::class.java)
-        runCatching {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(svcIntent)
-            else startService(svcIntent)
-        }
+        // Do NOT manually startForegroundService the media session service:
+        // Media3 starts/stops the service automatically when playback begins and
+        // calls startForeground() via DefaultMediaNotificationProvider. Pre-starting
+        // caused ForegroundServiceDidNotStartInTimeException ANRs on MIUI.
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val granted = ContextCompat.checkSelfPermission(
