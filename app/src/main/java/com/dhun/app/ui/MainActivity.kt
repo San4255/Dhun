@@ -1,6 +1,7 @@
 package com.dhun.app.ui
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -13,14 +14,12 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.PlaylistPlay
@@ -37,10 +36,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.dhun.app.DhunApp
 import com.dhun.app.components.BottomTab
@@ -64,18 +63,27 @@ class MainActivity : ComponentActivity() {
 
     private val notifPermLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { /* regardless of result, app still runs */ }
+    ) { /* app continues regardless */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        // request notification permission on T+
+
+        // Media3 manages the service lifecycle itself via its MediaSessionService;
+        // starting it early helps background notifications work reliably.
+        val svcIntent = Intent(this, com.dhun.app.player.DhunPlaybackService::class.java)
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(svcIntent)
+            else startService(svcIntent)
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val granted = ContextCompat.checkSelfPermission(
                 this, Manifest.permission.POST_NOTIFICATIONS
             ) == PackageManager.PERMISSION_GRANTED
             if (!granted) notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
+
         setContent {
             DhunTheme {
                 AppRoot()
@@ -88,8 +96,10 @@ private object Routes {
     const val Splash = "splash"
     const val Permission = "perm"
     const val Home = "home"
+    const val Search = "search"
+    const val Playlists = "playlists"
+    const val Settings = "settings"
     const val NowPlaying = "nowplaying"
-    const val Queue = "queue"
     const val Album = "album/{id}"
     const val Artist = "artist/{name}"
     const val Folder = "folder/{path}"
@@ -102,19 +112,52 @@ private object Routes {
 
 private enum class Tab { Library, Playlists, Search, Settings }
 
+// Tabs that show bottom bar + mini player
+private val bottomBarRoutes = setOf(Routes.Home, Routes.Playlists, Routes.Search, Routes.Settings)
+
 @Composable
 fun AppRoot() {
     val c = LocalDhunColors.current
     val nav = rememberNavController()
     var showQueue by remember { mutableStateOf(false) }
-    var tab by remember { mutableStateOf(Tab.Library) }
     val app = DhunApp.instance
+
+    // Observe current route
+    val backStackEntry by nav.currentBackStackEntryAsState()
+    val currentRoute = backStackEntry?.destination?.route
+
+    // Determine which tab is active from current route
+    val currentTab = when (currentRoute) {
+        Routes.Home -> Tab.Library
+        Routes.Playlists -> Tab.Playlists
+        Routes.Search -> Tab.Search
+        Routes.Settings -> Tab.Settings
+        else -> null
+    }
+    val showBottomBar = currentRoute in bottomBarRoutes
+
     val playerState by app.player.state.collectAsState()
-    val hasTrack = playerState.queue.isNotEmpty()
+    val hasTrack = playerState.queue.isNotEmpty() && playerState.durationMs > 0
 
     LaunchedEffect(Unit) {
-        nav.navigate(Routes.Splash) {
-            popUpTo(0) { inclusive = true }
+        nav.navigate(Routes.Splash) { popUpTo(0) { inclusive = true } }
+    }
+
+    fun navigateTab(tab: Tab) {
+        val route = when (tab) {
+            Tab.Library -> Routes.Home
+            Tab.Playlists -> Routes.Playlists
+            Tab.Search -> Routes.Search
+            Tab.Settings -> Routes.Settings
+        }
+        // pop up to home so back closes app from any tab, not stack tabs forever
+        nav.navigate(route) {
+            launchSingleTop = true
+            popUpTo(Routes.Home) {
+                saveState = true
+                inclusive = false
+            }
+            restoreState = true
         }
     }
 
@@ -129,182 +172,96 @@ fun AppRoot() {
                 NavHost(navController = nav, startDestination = Routes.Splash, modifier = Modifier.fillMaxSize()) {
                     composable(Routes.Splash) {
                         SplashScreen(
-                            onReady = {
-                                nav.navigate(Routes.Home) { popUpTo(Routes.Splash) { inclusive = true } }
-                            },
-                            onNeedPermission = {
-                                nav.navigate(Routes.Permission) { popUpTo(Routes.Splash) { inclusive = true } }
-                            },
+                            onReady = { nav.navigate(Routes.Home) { popUpTo(Routes.Splash) { inclusive = true } } },
+                            onNeedPermission = { nav.navigate(Routes.Permission) { popUpTo(Routes.Splash) { inclusive = true } } },
                         )
                     }
                     composable(Routes.Permission) {
                         PermissionScreen(
-                            onGranted = {
-                                nav.navigate(Routes.Splash) { popUpTo(0) { inclusive = true } }
-                            },
+                            onGranted = { nav.navigate(Routes.Splash) { popUpTo(0) { inclusive = true } } },
                         )
                     }
                     composable(Routes.Home) {
-                        tab = Tab.Library
-                        HomeScaffold(tab = tab, onTabChange = { tab = it }, nav = nav)
+                        LibraryScreen(
+                            onOpenNowPlaying = { nav.navigate(Routes.NowPlaying) },
+                            onOpenSearch = { navigateTab(Tab.Search) },
+                            onOpenAlbum = { id -> nav.navigate(Routes.album(id)) },
+                            onOpenArtist = { name -> nav.navigate(Routes.artist(name)) },
+                            onOpenFolder = { p -> nav.navigate(Routes.folder(p)) },
+                            onOpenSettings = { navigateTab(Tab.Settings) },
+                        )
                     }
-                    composable("search") {
-                        tab = Tab.Search
-                        Box(Modifier.fillMaxSize()) {
-                            SearchScreen(
-                                onBack = { nav.popBackStack(); tab = Tab.Library },
-                                onNowPlaying = { nav.navigate(Routes.NowPlaying) },
-                                onOpenAlbum = { id -> nav.navigate(Routes.album(id)) },
-                                onOpenArtist = { name -> nav.navigate(Routes.artist(name)) },
-                            )
-                            Column(Modifier.align(Alignment.BottomCenter).navigationBarsPadding()) {
-                                MiniPlayerHost(
-                                    onExpand = { nav.navigate(Routes.NowPlaying) },
-                                    onDismiss = { app.player.stopAndHide() },
-                                    onSwipePrev = { app.player.prev() },
-                                    onSwipeNext = { app.player.next() },
-                                )
-                                BottomTabBar(tab, onTab = { t ->
-                                    tab = t
-                                    when (t) {
-                                        Tab.Library -> nav.navigate(Routes.Home) { popUpTo(Routes.Home) { inclusive = true } }
-                                        Tab.Playlists -> nav.navigate("playlists") { popUpTo(Routes.Home) }
-                                        Tab.Search -> { }
-                                        Tab.Settings -> nav.navigate("settings")
-                                    }
-                                })
-                            }
-                        }
+                    composable(Routes.Search) {
+                        SearchScreen(
+                            onBack = { nav.popBackStack() },
+                            onNowPlaying = { nav.navigate(Routes.NowPlaying) },
+                            onOpenAlbum = { id -> nav.navigate(Routes.album(id)) },
+                            onOpenArtist = { name -> nav.navigate(Routes.artist(name)) },
+                        )
                     }
-                    composable("playlists") {
-                        tab = Tab.Playlists
-                        Box(Modifier.fillMaxSize()) {
-                            PlaylistsListScreen(onOpenPlaylist = { id -> nav.navigate(Routes.playlist(id)) })
-                            Column(Modifier.align(Alignment.BottomCenter).navigationBarsPadding()) {
-                                MiniPlayerHost(
-                                    onExpand = { nav.navigate(Routes.NowPlaying) },
-                                    onDismiss = { app.player.stopAndHide() },
-                                    onSwipePrev = { app.player.prev() },
-                                    onSwipeNext = { app.player.next() },
-                                )
-                                BottomTabBar(tab, onTab = { t ->
-                                    tab = t
-                                    when (t) {
-                                        Tab.Library -> nav.navigate(Routes.Home) { popUpTo(Routes.Home) { inclusive = true } }
-                                        Tab.Playlists -> { }
-                                        Tab.Search -> nav.navigate("search")
-                                        Tab.Settings -> nav.navigate("settings")
-                                    }
-                                })
-                            }
-                        }
+                    composable(Routes.Playlists) {
+                        PlaylistsListScreen(onOpenPlaylist = { id -> nav.navigate(Routes.playlist(id)) })
                     }
-                    composable("settings") {
-                        tab = Tab.Settings
-                        Box(Modifier.fillMaxSize()) {
-                            SettingsScreen(onBack = { nav.popBackStack() })
-                            Column(Modifier.align(Alignment.BottomCenter).navigationBarsPadding()) {
-                                MiniPlayerHost(
-                                    onExpand = { nav.navigate(Routes.NowPlaying) },
-                                    onDismiss = { app.player.stopAndHide() },
-                                    onSwipePrev = { app.player.prev() },
-                                    onSwipeNext = { app.player.next() },
-                                )
-                                BottomTabBar(tab, onTab = { t ->
-                                    tab = t
-                                    when (t) {
-                                        Tab.Library -> nav.navigate(Routes.Home) { popUpTo(Routes.Home) { inclusive = true } }
-                                        Tab.Playlists -> nav.navigate("playlists")
-                                        Tab.Search -> nav.navigate("search")
-                                        Tab.Settings -> {}
-                                    }
-                                })
-                            }
-                        }
+                    composable(Routes.Settings) {
+                        SettingsScreen(onBack = { nav.popBackStack() })
                     }
                     composable(Routes.NowPlaying) {
                         Box(Modifier.fillMaxSize().navigationBarsPadding()) {
                             NowPlayingScreen(
                                 onCollapse = { nav.popBackStack() },
                                 onOpenQueue = { showQueue = true },
-                                onAddToPlaylist = { /* TODO */ },
+                                onAddToPlaylist = { },
                             )
                         }
                     }
                     composable(Routes.Album, arguments = listOf(androidx.navigation.navArgument("id") { type = NavType.LongType })) { entry ->
                         val id = entry.arguments?.getLong("id") ?: -1L
-                        Box(Modifier.fillMaxSize()) {
-                            AlbumDetailScreen(
-                                albumId = id,
-                                onBack = { nav.popBackStack() },
-                                onGoToArtist = { name -> nav.navigate(Routes.artist(name)) },
-                                onNowPlaying = { nav.navigate(Routes.NowPlaying) },
-                            )
-                            Column(Modifier.align(Alignment.BottomCenter).navigationBarsPadding()) {
-                                MiniPlayerHost(
-                                    onExpand = { nav.navigate(Routes.NowPlaying) },
-                                    onDismiss = { app.player.stopAndHide() },
-                                    onSwipePrev = { app.player.prev() },
-                                    onSwipeNext = { app.player.next() },
-                                )
-                            }
-                        }
+                        AlbumDetailScreen(
+                            albumId = id,
+                            onBack = { nav.popBackStack() },
+                            onGoToArtist = { name -> nav.navigate(Routes.artist(name)) },
+                            onNowPlaying = { nav.navigate(Routes.NowPlaying) },
+                        )
                     }
                     composable(Routes.Artist) { entry ->
                         val name = java.net.URLDecoder.decode(entry.arguments?.getString("name") ?: "", "UTF-8")
-                        Box(Modifier.fillMaxSize()) {
-                            ArtistDetailScreen(
-                                artistName = name,
-                                onBack = { nav.popBackStack() },
-                                onOpenAlbum = { id -> nav.navigate(Routes.album(id)) },
-                                onNowPlaying = { nav.navigate(Routes.NowPlaying) },
-                            )
-                            Column(Modifier.align(Alignment.BottomCenter).navigationBarsPadding()) {
-                                MiniPlayerHost(
-                                    onExpand = { nav.navigate(Routes.NowPlaying) },
-                                    onDismiss = { app.player.stopAndHide() },
-                                    onSwipePrev = { app.player.prev() },
-                                    onSwipeNext = { app.player.next() },
-                                )
-                            }
-                        }
+                        ArtistDetailScreen(
+                            artistName = name,
+                            onBack = { nav.popBackStack() },
+                            onOpenAlbum = { id -> nav.navigate(Routes.album(id)) },
+                            onNowPlaying = { nav.navigate(Routes.NowPlaying) },
+                        )
                     }
                     composable(Routes.Folder) { entry ->
                         val path = java.net.URLDecoder.decode(entry.arguments?.getString("path") ?: "", "UTF-8")
-                        Box(Modifier.fillMaxSize()) {
-                            FolderDetailScreen(
-                                path = path,
-                                onBack = { nav.popBackStack() },
-                                onNowPlaying = { nav.navigate(Routes.NowPlaying) },
-                            )
-                            Column(Modifier.align(Alignment.BottomCenter).navigationBarsPadding()) {
-                                MiniPlayerHost(
-                                    onExpand = { nav.navigate(Routes.NowPlaying) },
-                                    onDismiss = { app.player.stopAndHide() },
-                                    onSwipePrev = { app.player.prev() },
-                                    onSwipeNext = { app.player.next() },
-                                )
-                            }
-                        }
+                        FolderDetailScreen(
+                            path = path,
+                            onBack = { nav.popBackStack() },
+                            onNowPlaying = { nav.navigate(Routes.NowPlaying) },
+                        )
                     }
                     composable(Routes.Playlist, arguments = listOf(androidx.navigation.navArgument("id") { type = NavType.LongType })) { entry ->
                         val id = entry.arguments?.getLong("id") ?: -1L
-                        Box(Modifier.fillMaxSize()) {
-                            PlaylistDetailScreen(
-                                playlistId = id,
-                                onBack = { nav.popBackStack() },
-                                onNowPlaying = { nav.navigate(Routes.NowPlaying) },
-                            )
-                            Column(Modifier.align(Alignment.BottomCenter).navigationBarsPadding()) {
-                                MiniPlayerHost(
-                                    onExpand = { nav.navigate(Routes.NowPlaying) },
-                                    onDismiss = { app.player.stopAndHide() },
-                                    onSwipePrev = { app.player.prev() },
-                                    onSwipeNext = { app.player.next() },
-                                )
-                            }
-                        }
+                        PlaylistDetailScreen(
+                            playlistId = id,
+                            onBack = { nav.popBackStack() },
+                            onNowPlaying = { nav.navigate(Routes.NowPlaying) },
+                        )
                     }
+                }
+            }
+
+            if (showBottomBar) {
+                Column(Modifier.navigationBarsPadding()) {
+                    if (hasTrack) {
+                        MiniPlayer(
+                            onExpand = { nav.navigate(Routes.NowPlaying) },
+                            onDismiss = { app.player.stopAndHide() },
+                            onSwipePrev = { app.player.prev() },
+                            onSwipeNext = { app.player.next() },
+                        )
+                    }
+                    BottomTabBar(currentTab ?: Tab.Library, currentTab != null) { t -> navigateTab(t) }
                 }
             }
         }
@@ -318,7 +275,7 @@ fun AppRoot() {
                 ) {
                     QueueSheet(
                         onClose = { showQueue = false },
-                        onAddTracks = { /* TODO */ },
+                        onAddTracks = { },
                     )
                 }
             }
@@ -327,59 +284,24 @@ fun AppRoot() {
 }
 
 @Composable
-private fun MiniPlayerHost(onExpand: () -> Unit, onDismiss: () -> Unit, onSwipePrev: () -> Unit, onSwipeNext: () -> Unit) {
-    MiniPlayer(
-        onExpand = onExpand,
-        onDismiss = onDismiss,
-        onSwipePrev = onSwipePrev,
-        onSwipeNext = onSwipeNext,
-    )
-}
-
-@Composable
-private fun BottomTabBar(current: Tab, onTab: (Tab) -> Unit) {
+private fun BottomTabBar(current: Tab, enabled: Boolean, onTab: (Tab) -> Unit) {
     val c = LocalDhunColors.current
     Row(Modifier.fillMaxWidth().background(c.bg).border(1.dp, c.border).height(58.dp)) {
         BottomTab(
-            icon = Icons.Default.Home, label = "library", active = current == Tab.Library,
+            icon = Icons.Default.Home, label = "library", active = enabled && current == Tab.Library,
             onClick = { onTab(Tab.Library) },
         )
         BottomTab(
-            icon = Icons.Default.PlaylistPlay, label = "playlists", active = current == Tab.Playlists,
+            icon = Icons.Default.PlaylistPlay, label = "playlists", active = enabled && current == Tab.Playlists,
             onClick = { onTab(Tab.Playlists) },
         )
         BottomTab(
-            icon = Icons.Default.Search, label = "search", active = current == Tab.Search,
+            icon = Icons.Default.Search, label = "search", active = enabled && current == Tab.Search,
             onClick = { onTab(Tab.Search) },
         )
         BottomTab(
-            icon = Icons.Default.Settings, label = "settings", active = current == Tab.Settings,
+            icon = Icons.Default.Settings, label = "settings", active = enabled && current == Tab.Settings,
             onClick = { onTab(Tab.Settings) },
         )
-    }
-}
-
-@Composable
-private fun HomeScaffold(tab: Tab, onTabChange: (Tab) -> Unit, nav: androidx.navigation.NavHostController) {
-    val c = LocalDhunColors.current
-    val app = DhunApp.instance
-    Box(Modifier.fillMaxSize()) {
-        LibraryScreen(
-            onOpenNowPlaying = { nav.navigate(Routes.NowPlaying) },
-            onOpenSearch = { nav.navigate("search"); onTabChange(Tab.Search) },
-            onOpenAlbum = { id -> nav.navigate(Routes.album(id)) },
-            onOpenArtist = { name -> nav.navigate(Routes.artist(name)) },
-            onOpenFolder = { p -> nav.navigate(Routes.folder(p)) },
-            onOpenSettings = { nav.navigate("settings"); onTabChange(Tab.Settings) },
-        )
-        Column(Modifier.align(Alignment.BottomCenter).navigationBarsPadding()) {
-            MiniPlayerHost(
-                onExpand = { nav.navigate(Routes.NowPlaying) },
-                onDismiss = { app.player.stopAndHide() },
-                onSwipePrev = { app.player.prev() },
-                onSwipeNext = { app.player.next() },
-            )
-            BottomTabBar(tab, onTab = onTabChange)
-        }
     }
 }

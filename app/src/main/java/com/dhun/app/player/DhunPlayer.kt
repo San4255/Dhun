@@ -1,5 +1,6 @@
 package com.dhun.app.player
 
+import android.app.Notification
 import android.app.PendingIntent
 import android.content.Intent
 import androidx.media3.common.AudioAttributes
@@ -9,9 +10,10 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
-import androidx.media3.session.MediaSessionService
+import androidx.media3.session.MediaStyleNotificationHelper
 import com.dhun.app.DhunApp
 import com.dhun.app.data.Song
+import com.dhun.app.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -28,7 +30,7 @@ data class PlayState(
     val durationMs: Long = 0L,
     val shuffle: Boolean = false,
     val repeatMode: Int = Player.REPEAT_MODE_OFF,
-    val queue: List<Long> = emptyList(), // song ids
+    val queue: List<Long> = emptyList(),
 )
 
 class DhunPlayer(private val app: android.app.Application) {
@@ -64,16 +66,27 @@ class DhunPlayer(private val app: android.app.Application) {
         startPositionTicker()
     }
 
-    fun ensureSession(service: MediaSessionService): MediaSession {
-        return mediaSession ?: run {
-            val intent = app.packageManager.getLaunchIntentForPackage(app.packageName)?.let {
-                PendingIntent.getActivity(app, 0, it, PendingIntent.FLAG_IMMUTABLE)
-            }
-            MediaSession.Builder(app, exo)
-                .apply { if (intent != null) setSessionActivity(intent) }
-                .build()
-                .also { mediaSession = it }
+    fun getOrCreateSession(service: DhunPlaybackService): MediaSession {
+        mediaSession?.let { return it }
+        val launchIntent = Intent(app, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NEW_TASK
         }
+        val pi = PendingIntent.getActivity(
+            app, 0, launchIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val session = MediaSession.Builder(app, exo)
+            .setSessionActivity(pi)
+            .build()
+        mediaSession = session
+        return session
+    }
+
+    val session: MediaSession? get() = mediaSession
+
+    fun releaseSession() {
+        mediaSession?.release()
+        mediaSession = null
     }
 
     private fun startPositionTicker() {

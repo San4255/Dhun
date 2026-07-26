@@ -200,26 +200,30 @@ private fun ToggleRow(label: String, value: Boolean, onChange: (Boolean) -> Unit
 }
 
 @Composable
-private fun StepperRow(label: String, value: Int, unit: String, range: IntProgression, onChange: (Int) -> Unit) {
+private fun StepperRow(label: String, value: Int, unit: String, range: IntProgression, step: Int, onChange: (Int) -> Unit) {
     val c = LocalDhunColors.current
     Box(Modifier.fillMaxWidth().border(1.dp, c.border).padding(horizontal = 12.dp, vertical = 10.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             androidx.compose.material.Text(label, fontFamily = FontFamily.Monospace, fontSize = 13.sp, color = c.textPrimary)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TermButton(label = "-", small = true, onClick = {
-                    val v = range.first + ((value - range.step - range.first).coerceAtLeast(0) / range.step) * range.step
-                    onChange(v)
+                    val next = value - step
+                    if (next >= range.first) onChange(next)
                 })
                 androidx.compose.material.Text(
                     "$value $unit", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = c.textSecondary,
                 )
                 TermButton(label = "+", small = true, accent = true, onClick = {
-                    val next = value + range.step
+                    val next = value + step
                     if (next <= range.last) onChange(next)
                 })
             }
         }
     }
+}
+@Composable
+private fun StepperRow(label: String, value: Int, unit: String, range: IntProgression, onChange: (Int) -> Unit) {
+    StepperRow(label = label, value = value, unit = unit, range = range, step = range.step, onChange = onChange)
 }
 
 // --- Sub screens ---
@@ -229,7 +233,7 @@ private fun EqSub() {
     val c = LocalDhunColors.current
     var enabled by remember { mutableStateOf(false) }
     var preset by remember { mutableStateOf("flat") }
-    val presets = listOf("flat", "bass boost", "vocal", "custom")
+    val presets = listOf("off", "flat", "bass boost", "vocal", "custom")
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)) {
         ToggleRow("equalizer", enabled) { enabled = it }
         Spacer(Modifier.height(8.dp))
